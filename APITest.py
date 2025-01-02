@@ -18,7 +18,7 @@ n_inputs = 3
 
 def request_knmi_data():
     """
-    Functie waarmee we de data van de KNMI api opvragen en opslaan in een .json file
+    Functie waarmee we de data van de KNMI api opvragen
     Functie geeft data ook terug als json object om in andere functies te gebruiken
     """
     #URL voor KNMI api
@@ -150,7 +150,7 @@ def main():
     json_data = request_knmi_data()
     dataframe = create_pandas_frame(json_data)
     save_dataframe(dataframe, './data/weather_data_api_daily.csv')
-    
+
     training, validation, testing = prepare_data_for_training(dataframe)
 
     x_train, y_train = create_sequences(training, n_steps, future_days, output_feature_index)
