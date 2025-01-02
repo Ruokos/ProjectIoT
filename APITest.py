@@ -107,7 +107,7 @@ def create_pandas_frame(json_data) -> pd.DataFrame:
 
 def prepare_data_for_training(data: pd.DataFrame):
     """
-    This function splits up the dataset for training, validation and testing and also normalizes all values
+    Deze functie splitst alle data op in training, validatie en testing en normaliseert de waarden voor model training
     """
     split = 0.8
     training_size = int(len(data) * split)
