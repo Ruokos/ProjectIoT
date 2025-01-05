@@ -16,7 +16,7 @@ output_feature_index = numeric_columns.index(output_feature)
 #We willen 1 dag in de toekomst de temperatuur voorspellen
 future_days = 1
 #Hiervoor gebruiken we n_steps afgelopen dagen 
-n_steps = 365
+n_steps = 14
 #Om te voorspellen gebruiken we 3 waarden, temperatuur, luchtdruk en luchtvochtigheid
 n_inputs = 3
 
@@ -182,12 +182,37 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=5,
-        batch_size=32,
+        epochs=30,
+        batch_size=16,
         callbacks=[early_stop]
     )
 
     #This still needs to be rescaled to present real temperature values again
     predictions = model.predict(x_testing)
 
-main()
+    #Here we rescale scaled values back to celsius
+    dummy_input_1 = np.concatenate([
+    predictions,
+    np.zeros_like(predictions)
+    ], axis=1)
+
+    predictions_rescaled = scaler.inverse_transform(dummy_input_1)[:, 0]
+
+    # Rescale the y_train (to compare the actual value for temperature in training)
+    dummy_input_2 = np.concatenate([
+        y_train.reshape(-1, 1),  # Actual temperatures in training
+        np.zeros_like(y_train.reshape(-1, 1)),  # Set the humidity column to zeros
+    ], axis=1)
+
+    # Inverse transform y_train to get the actual temperatures in training data
+    y_train_rescaled = scaler.inverse_transform(dummy_input_2)[:, 0]
+
+    results = []
+    for index in range(len(predictions_rescaled)):
+        result = float(predictions_rescaled[index]) - float(y_train_rescaled[index])
+        results.append(result)
+    print(results)
+    print(f"Heighest differences from real values: {max(results)} {min(results)}")
+
+if __name__ == '__main__': 
+    main()
