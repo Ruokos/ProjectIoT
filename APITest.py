@@ -4,6 +4,10 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
+from keras.callbacks import EarlyStopping
+
 
 numeric_columns = ['tempC', 'pressure', 'humidity']
 #Waarden die we nodig hebben voor het maken van sequences om het model te trainen
@@ -143,12 +147,13 @@ def create_sequences(data_input, n_steps, future_days, out_feature_index):
         seq_x, seq_y = data_input[i:end_ix, :], data_input[out_end_ix - 1, out_feature_index]
         x.append(seq_x)
         y.append(seq_y)
-    return np.array(x), np.array(y)
-    
+    return np.array(x), np.array(y)    
 
 def main():
     json_data = request_knmi_data()
     dataframe = create_pandas_frame(json_data)
+    ################Deze regel moet verwijderd worden zodra we een weerstation vinden die wel luchtdrukwaarden geeft
+    dataframe = dataframe.drop(columns="pressure")
     save_dataframe(dataframe, './data/weather_data_api_daily.csv')
 
     training, validation, testing = prepare_data_for_training(dataframe)
@@ -157,5 +162,33 @@ def main():
     x_validation, y_validation = create_sequences(validation, n_steps, future_days, output_feature_index)
     x_testing, y_testing = create_sequences(testing, n_steps, future_days, output_feature_index)
 
+    #Hier maken we het model dat we gaan trainen
+    model = Sequential([
+        LSTM(128,
+             input_shape=(n_steps, x_train.shape[2])),
+        Dense(1)
+    ])
+
+    model.compile(optimizer='adam', loss='mse')
+
+    #Callback die we gebruiken wanneer het model te inaccuraat wordt, hiermee proberen we overfitting te voorkomen
+    early_stop = EarlyStopping(
+        monitor='val_loss',
+        patience=5,
+        mode='min',
+        restore_best_weights=True
+    )
+
+    history = model.fit(
+        x_train, y_train,
+        validation_data=(x_validation, y_validation),
+        epochs=20,
+        batch_size=32,
+        callbacks=[early_stop]
+    )
+
+    prediction = model.predict(x_testing)
+
+    print(f"Prediction: {prediction}, actual values: {y_testing}")
 
 main()
