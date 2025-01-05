@@ -125,10 +125,10 @@ def prepare_data_for_training(data: pd.DataFrame):
     scaler = MinMaxScaler(feature_range=(0, 1))
 
     training_data_normalized = scaler.fit_transform(training_data)
-    validation_data_normalized = scaler.fit_transform(validation_data)
-    testing_data_normalized = scaler.fit_transform(testing_data)
+    validation_data_normalized = scaler.transform(validation_data)
+    testing_data_normalized = scaler.transform(testing_data)
 
-    return training_data_normalized, validation_data_normalized, testing_data_normalized
+    return scaler, training_data_normalized, validation_data_normalized, testing_data_normalized
 
 
 def save_dataframe(data: pd.DataFrame, path: str):
@@ -156,7 +156,7 @@ def main():
     dataframe = dataframe.drop(columns="pressure")
     save_dataframe(dataframe, './data/weather_data_api_daily.csv')
 
-    training, validation, testing = prepare_data_for_training(dataframe)
+    scaler, training, validation, testing = prepare_data_for_training(dataframe)
 
     x_train, y_train = create_sequences(training, n_steps, future_days, output_feature_index)
     x_validation, y_validation = create_sequences(validation, n_steps, future_days, output_feature_index)
@@ -182,13 +182,12 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=20,
+        epochs=5,
         batch_size=32,
         callbacks=[early_stop]
     )
 
-    prediction = model.predict(x_testing)
-
-    print(f"Prediction: {prediction}, actual values: {y_testing}")
+    #This still needs to be rescaled to present real temperature values again
+    predictions = model.predict(x_testing)
 
 main()
