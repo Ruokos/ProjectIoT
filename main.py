@@ -4,19 +4,19 @@ import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
-from keras.layers import LSTM, Dense
+from keras.layers import LSTM, Dense, Dropout
 from keras.callbacks import EarlyStopping
 
-numeric_columns = ['temperature', 'pressure', 'humidity']
+numeric_columns = ['temperature', 'pressure', 'humidity', 'year', 'month', 'day', 'month_sin', 'month_cos', 'hour_sin', 'hour_cos']
 #Waarden die we nodig hebben voor het maken van sequences om het model te trainen
 output_feature = "temperature"
 output_feature_index = numeric_columns.index(output_feature)
 #We willen 24 uur in de toekomst de temperatuur voorspellen
 future_days = 24
 #Hiervoor gebruiken we n_steps aantal uur
-n_steps = 14
+n_steps = 72
 #Om te voorspellen gebruiken we 3 waarden, temperatuur, luchtdruk en luchtvochtigheid
-n_inputs = 3
+n_inputs = 7
 
 def combine_data():
     folder_path = "./data/uurmetingen"
@@ -47,6 +47,14 @@ def create_pandas_frame() -> pd.DataFrame:
 
             data = {
                 "date": date,
+                "year": date.year,
+                "month": date.month,
+                "day": date.day,
+                "hour": date.hour,
+                "hour_sin": np.sin(2 * np.pi * date.hour / 24),
+                "hour_cos": np.cos(2 * np.pi * date.hour / 24),
+                "month_sin": np.sin(2 * np.pi * date.month / 12),
+                "month_cos": np.cos(2 * np.pi * date.month / 12),
                 "pressure": pressure,
                 'humidity': humidity,
                 'temperature': temperature
@@ -109,10 +117,13 @@ def create_sequences(data_input, n_steps, future_days, out_feature_index):
     return np.array(x), np.array(y)    
 
 def main():
+    data_path = './data/weather_data_api_daily.csv'
     combine_data()
-    dataframe = create_pandas_frame()
-    ################Deze regel moet verwijderd worden zodra we een weerstation vinden die wel luchtdrukwaarden geeft
-    save_dataframe(dataframe, './data/weather_data_api_daily.csv')
+    if os.path.exists(data_path):
+        dataframe = create_pandas_frame()
+        save_dataframe(dataframe, data_path)
+    else:
+        dataframe = pd.read_csv(data_path)
 
     scaler, training, validation, testing = prepare_data_for_training(dataframe)
 
@@ -122,8 +133,15 @@ def main():
 
     #Hier maken we het model dat we gaan trainen
     model = Sequential([
-        LSTM(128,
+        LSTM(150,
+             input_shape=(n_steps, x_train.shape[2]), return_sequences=True),
+        Dropout(0.2),
+        LSTM(100,
+             input_shape=(n_steps, x_train.shape[2]), return_sequences=True),
+        Dropout(0.2),
+        LSTM(50,
              input_shape=(n_steps, x_train.shape[2])),
+        Dropout(0.2),
         Dense(1)
     ])
 
@@ -132,7 +150,7 @@ def main():
     #Callback die we gebruiken wanneer het model te inaccuraat wordt, hiermee proberen we overfitting te voorkomen
     early_stop = EarlyStopping(
         monitor='val_loss',
-        patience=5,
+        patience=2,
         mode='min',
         restore_best_weights=True
     )
@@ -140,37 +158,15 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=30,
-        batch_size=32,
+        epochs=10,
+        batch_size=8,
         callbacks=[early_stop]
     )
 
-    #This still needs to be rescaled to present real temperature values again
-    predictions = model.predict(x_testing)
+    print(history.history['loss'])
+    print(history.history['val_loss'])
 
-    #Here we rescale scaled values back to celsius
-    dummy_input_1 = np.concatenate([
-    predictions,
-    np.zeros_like(predictions)
-    ], axis=1)
-
-    predictions_rescaled = scaler.inverse_transform(dummy_input_1)[:, 0]
-
-    # Rescale the y_train (to compare the actual value for temperature in training)
-    dummy_input_2 = np.concatenate([
-        y_train.reshape(-1, 1),  # Actual temperatures in training
-        np.zeros_like(y_train.reshape(-1, 1)),  # Set the humidity column to zeros
-    ], axis=1)
-
-    # Inverse transform y_train to get the actual temperatures in training data
-    y_train_rescaled = scaler.inverse_transform(dummy_input_2)[:, 0]
-
-    results = []
-    for index in range(len(predictions_rescaled)):
-        result = float(predictions_rescaled[index]) - float(y_train_rescaled[index])
-        results.append(result)
-    print(results)
-    print(f"Heighest differences from real values: {max(results)} {min(results)}")
+    model.save("./model/weather_model.h5")
 
 if __name__ == '__main__': 
     main()
