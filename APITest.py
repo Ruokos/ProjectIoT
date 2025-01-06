@@ -183,7 +183,7 @@ def main():
         x_train, y_train,
         validation_data=(x_validation, y_validation),
         epochs=30,
-        batch_size=16,
+        batch_size=32,
         callbacks=[early_stop]
     )
 
