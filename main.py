@@ -3,11 +3,12 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
+from joblib import dump, load
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
 from keras.callbacks import EarlyStopping
 
-numeric_columns = ['temperature', 'pressure', 'humidity', 'year', 'month_sin', 'month_cos', 'hour_sin', 'hour_cos']
+numeric_columns = ['temperature', 'pressure', 'humidity', 'year']
 #'day'
 #Waarden die we nodig hebben voor het maken van sequences om het model te trainen
 output_feature = "temperature"
@@ -80,8 +81,9 @@ def prepare_data_for_training(data: pd.DataFrame):
     """
     split = 0.8
     training_size = int(len(data) * split)
-    validation_size = int(len(data) * (1-split)//2)
-    testing_size = len(data) - training_size - validation_size
+    remaining_size = len(data) - training_size
+    validation_size = remaining_size // 2
+    testing_size = remaining_size - validation_size
 
     training_data = data[:training_size]
     validation_data = data[training_size:training_size + validation_size]
@@ -89,9 +91,9 @@ def prepare_data_for_training(data: pd.DataFrame):
 
     scaler = MinMaxScaler(feature_range=(0, 1))
 
-    training_data_normalized = scaler.fit_transform(training_data)
-    validation_data_normalized = scaler.transform(validation_data)
-    testing_data_normalized = scaler.transform(testing_data)
+    training_data_normalized = scaler.fit_transform(training_data[numeric_columns])
+    validation_data_normalized = scaler.transform(validation_data[numeric_columns])
+    testing_data_normalized = scaler.transform(testing_data[numeric_columns])
 
     return scaler, training_data_normalized, validation_data_normalized, testing_data_normalized
 
@@ -113,7 +115,24 @@ def create_sequences(data_input, n_steps, future_days, out_feature_index):
         x.append(seq_x)
         y.append(seq_y)
 
-    return np.array(x), np.array(y)    
+    return np.array(x), np.array(y)
+
+def test_model(model, x_testing, y_testing, scaler):
+    predictions = model.predict(x_testing)
+
+    padded_predictions = np.zeros((predictions.shape[0], n_inputs))
+    padded_predictions[:, output_feature_index] = predictions.flatten()
+    print(padded_predictions)
+    predictions_rescaled = scaler.inverse_transform(padded_predictions)[:, output_feature_index]
+    print(predictions_rescaled)
+
+    padded_y_testing = np.zeros((y_testing.shape[0], n_inputs))
+    padded_y_testing[:, output_feature_index] = y_testing.flatten()
+    y_testing_rescaled = scaler.inverse_transform(padded_y_testing)[:, output_feature_index]
+
+    errors = predictions_rescaled - y_testing_rescaled
+    mae = np.mean(np.abs(errors))
+    print(f"Lijst van daadwerkelijke waarde vs voorspelde waarde: {errors}\nMean Absolute Error: {mae}")
 
 def main():
     data_path = './data/weather_data_api_daily.csv'
@@ -129,15 +148,8 @@ def main():
 
     #Hier maken we het model dat we gaan trainen
     model = Sequential([
-        LSTM(150,
-             input_shape=(n_steps, x_train.shape[2]), return_sequences=True),
-        Dropout(0.4),
-        LSTM(100,
-             input_shape=(n_steps, x_train.shape[2]), return_sequences=True),
-        Dropout(0.3),
-        LSTM(50,
+        LSTM(128,
              input_shape=(n_steps, x_train.shape[2])),
-        Dropout(0.2),
         Dense(1)
     ])
 
@@ -154,15 +166,15 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=20,
+        epochs=50,
         batch_size=128,
         callbacks=[early_stop]
     )
 
-    print(history.history['loss'])
-    print(history.history['val_loss'])
-
     model.save("./model/weather_model.h5")
+    dump(scaler, './model/scaler.pkl')
+
+    test_model(model, x_testing, y_testing, scaler)
 
 if __name__ == '__main__': 
     main()
