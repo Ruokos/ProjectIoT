@@ -7,7 +7,8 @@ from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
 from keras.callbacks import EarlyStopping
 
-numeric_columns = ['temperature', 'pressure', 'humidity', 'year', 'month', 'day', 'month_sin', 'month_cos', 'hour_sin', 'hour_cos']
+numeric_columns = ['temperature', 'pressure', 'humidity', 'year', 'month_sin', 'month_cos', 'hour_sin', 'hour_cos']
+#'day'
 #Waarden die we nodig hebben voor het maken van sequences om het model te trainen
 output_feature = "temperature"
 output_feature_index = numeric_columns.index(output_feature)
@@ -15,8 +16,8 @@ output_feature_index = numeric_columns.index(output_feature)
 future_days = 24
 #Hiervoor gebruiken we n_steps aantal uur
 n_steps = 72
-#Om te voorspellen gebruiken we 3 waarden, temperatuur, luchtdruk en luchtvochtigheid
-n_inputs = 7
+#Om te voorspellen gebruiken we de waarden uit numeric_columns, we moeten de length hebben van de array zodat het model weet hoeveel inputs het kan verwachten
+n_inputs = len(numeric_columns)
 
 def combine_data():
     folder_path = "./data/uurmetingen"
@@ -48,9 +49,7 @@ def create_pandas_frame() -> pd.DataFrame:
             data = {
                 "date": date,
                 "year": date.year,
-                "month": date.month,
-                "day": date.day,
-                "hour": date.hour,
+                #"day": date.day,
                 "hour_sin": np.sin(2 * np.pi * date.hour / 24),
                 "hour_cos": np.cos(2 * np.pi * date.hour / 24),
                 "month_sin": np.sin(2 * np.pi * date.month / 12),
@@ -119,11 +118,8 @@ def create_sequences(data_input, n_steps, future_days, out_feature_index):
 def main():
     data_path = './data/weather_data_api_daily.csv'
     combine_data()
-    if os.path.exists(data_path):
-        dataframe = create_pandas_frame()
-        save_dataframe(dataframe, data_path)
-    else:
-        dataframe = pd.read_csv(data_path)
+    dataframe = create_pandas_frame()
+    save_dataframe(dataframe, data_path)
 
     scaler, training, validation, testing = prepare_data_for_training(dataframe)
 
@@ -135,10 +131,10 @@ def main():
     model = Sequential([
         LSTM(150,
              input_shape=(n_steps, x_train.shape[2]), return_sequences=True),
-        Dropout(0.2),
+        Dropout(0.4),
         LSTM(100,
              input_shape=(n_steps, x_train.shape[2]), return_sequences=True),
-        Dropout(0.2),
+        Dropout(0.3),
         LSTM(50,
              input_shape=(n_steps, x_train.shape[2])),
         Dropout(0.2),
@@ -150,7 +146,7 @@ def main():
     #Callback die we gebruiken wanneer het model te inaccuraat wordt, hiermee proberen we overfitting te voorkomen
     early_stop = EarlyStopping(
         monitor='val_loss',
-        patience=2,
+        patience=5,
         mode='min',
         restore_best_weights=True
     )
@@ -158,8 +154,8 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=10,
-        batch_size=8,
+        epochs=20,
+        batch_size=128,
         callbacks=[early_stop]
     )
 
