@@ -7,8 +7,8 @@ import os
 
 
 def combine_data():
-    folder_path = "C:\\Github Repositories\\ProjectIoT\\data\\uurmetingen"
-    output = "C:\\Github Repositories\\ProjectIoT\\data\\hourly_data.txt"
+    folder_path = os.path.join(os.getcwd(), "data", "uurmetingen")
+    output = os.path.join(os.getcwd(), "data", "hourly_data.txt")
 
     text_files = [file for file in os.listdir(folder_path)]
 
@@ -19,7 +19,7 @@ def combine_data():
                 outfile.write(infile.read())
 
 def load_data():
-    data = "C:\\Github Repositories\\ProjectIoT\\data\\hourly_data.txt"
+    data = os.path.join(os.getcwd(), "data", "hourly_data.txt")
     extracted_data = []
     with open(data, "r") as lines:
         for line in lines:
