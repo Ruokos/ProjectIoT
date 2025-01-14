@@ -7,6 +7,7 @@ from joblib import dump
 from keras.models import Sequential
 from keras.layers import LSTM, Dense
 from keras.callbacks import EarlyStopping
+from keras.losses import MeanSquaredError
 
 np.set_printoptions(threshold=75)
 
@@ -63,6 +64,9 @@ def create_pandas_frame() -> pd.DataFrame:
                 "pressure": pressure,
                 'humidity': humidity,
                 "year": date.year,
+                #Hier berekenen we de cosinus en sinus van onze uur en maand
+                #Dit doen we aangezien deze waarden cyclisch zijn, dus door deze als golf aan het model te geven
+                #Zorgen we ervoor dat de cyclische aard van uur en maand opgepikt kunnen worden door het model
                 "hour_sin": np.sin(2 * np.pi * date.hour / 24),
                 "hour_cos": np.cos(2 * np.pi * date.hour / 24),
                 "month_sin": np.sin(2 * np.pi * date.month / 12),
@@ -188,7 +192,7 @@ def main():
     ])
 
     #Compiler van het model instellen
-    model.compile(optimizer='adam', loss='mse')
+    model.compile(optimizer='adam', loss=MeanSquaredError())
 
     #Callback die we gebruiken wanneer het model te inaccuraat wordt, hiermee proberen we overfitting te voorkomen
     early_stop = EarlyStopping(
@@ -203,7 +207,7 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=50,
+        epochs=5,
         batch_size=2048,
         callbacks=[early_stop]
     )
