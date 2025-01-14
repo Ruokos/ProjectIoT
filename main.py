@@ -114,24 +114,21 @@ def prepare_data_for_training(data: pd.DataFrame):
     validation_data_normalized = validation_data.copy()
     testing_data_normalized = testing_data.copy()
 
-    #Scaler initisialisen als None, in de volgende loop slaan we hierin de scaler van temperatuur op zodat we deze later in de code kunnen hergebruiken
-    scaler = None
+    #Dictionary om alle scalers op te slaan
+    scalers = {}
 
     #Voor elke kolom in onze dataset, scalen we de waarden met een scaler tussen 0 en 1 voor het trainen van het model
     for column in numeric_columns:
         #Temporary scaler, gebruiken we in deze loop
         temp_scaler = MinMaxScaler(feature_range=(0, 1))
+        scalers[column] = temp_scaler
 
         #Gemaakte temp_scaler toepassen op onze datasets
         training_data_normalized[column] = temp_scaler.fit_transform(training_data[[column]])
         validation_data_normalized[column] = temp_scaler.transform(validation_data[[column]])
         testing_data_normalized[column] = temp_scaler.transform(testing_data[[column]])
-
-        #We willen de scaler van onze output_feature bewaren, aangezien we die moeten gebruiken om de output van de AI weer terug te schalen.
-        if column == output_feature:
-            scaler = temp_scaler
     
-    return scaler, training_data_normalized, validation_data_normalized, testing_data_normalized
+    return scalers, training_data_normalized, validation_data_normalized, testing_data_normalized
 
 
 def save_dataframe(data: pd.DataFrame, path: str):
@@ -160,9 +157,11 @@ def test_model(model, x_testing, y_testing, scaler):
     #Output terugrekenen van scaled versie naar celsius
     predictions_rescaled = scaler.inverse_transform(predictions.reshape(-1, 1))
     predictions_rounded = np.round(predictions_rescaled, output_decimals)
+
     #Hetzelfde doen we voor onze testing_data om de output van het model te vergelijken
     y_testing_rescaled = scaler.inverse_transform(y_testing.reshape(-1, 1))
     y_testing_rounded = np.round(y_testing_rescaled, output_decimals)
+
 
     #Verschil tussen prediction en daadwerkelijke waarde uitrekenen
     errors = predictions_rounded - y_testing_rounded
@@ -177,8 +176,8 @@ def main():
     dataframe = create_pandas_frame()
     save_dataframe(dataframe, data_path)
 
-    scaler, training, validation, testing = prepare_data_for_training(dataframe)
-
+    scalers, training, validation, testing = prepare_data_for_training(dataframe)
+    print(scalers)
     x_train, y_train = create_sequences(training, n_steps, future_hours, output_feature_index)
     x_validation, y_validation = create_sequences(validation, n_steps, future_hours, output_feature_index)
     x_testing, y_testing = create_sequences(testing, n_steps, future_hours, output_feature_index)
@@ -207,17 +206,17 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=5,
+        epochs=2,
         batch_size=2048,
         callbacks=[early_stop]
     )
 
     #Model en gebruikte scaler opslaan nadat we het model getrained hebben
-    #De scaler slaan we op zodat we de predictions van het model ook weer terug kunnen rekenen naar graden celsius
+    #De scalers slaan we op om in de code van de Raspberry Pi te kunnen hergebruiken
     model.save("./model/weather_model.h5")
-    dump(scaler, './model/scaler.pkl')
+    dump(scalers, './model/scalers.pkl')
     
-    test_model(model, x_testing, y_testing, scaler)
+    test_model(model, x_testing, y_testing, scalers['temperature'])
 
 if __name__ == '__main__': 
     main()
