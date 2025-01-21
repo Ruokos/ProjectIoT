@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
+import calendar
 from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
 from joblib import dump
@@ -11,29 +12,40 @@ from keras.losses import MeanSquaredError
 
 np.set_printoptions(threshold=75)
 
-numeric_columns = ['temperature', 'pressure', 'humidity', 'year', 'hour_sin', 'hour_cos', 'month_sin', 'month_cos']
+#Op hoeveel decimalen we uiteindelijk onze voorspellingen afronden in de functie test_model
+OUTPUT_DECIMALS = 1
+#We willen 24 uur in de toekomst de temperatuur voorspellen
+FUTURE_HOURS = 24
+#Hiervoor gebruiken we n_steps aantal uur
+N_STEPS = 168
+#Aantal epochs voor model training
+EPOCHS = 50
+#Batch size
+BATCH_SIZE = 2048
 
+#De kolommen uit ons dataframe die we gebruiken om het model te trainen
+#Het is belangrijk deze lijst op dezelfde volgorde te houden als de dictionary die gemaakt wordt in create_pandas_frame!
+numeric_columns = ['temperature', 'pressure', 'humidity', 'year', 'hour_sin', 'hour_cos', 'month_sin', 'month_cos']
+#Om te voorspellen gebruiken we de waarden uit numeric_columns, we moeten de length hebben van de array zodat het model weet hoeveel inputs het kan verwachten
+n_inputs = len(numeric_columns)
 #Dit is het veld uit numeric_columns die we uiteindelijk willen voorspellen
 output_feature = "temperature"
 #Dit is de index van de waarde in de kolom. In het geval van temperatuur, is dat index 0
 output_feature_index = numeric_columns.index(output_feature)
-#Op hoeveel decimalen we uiteindelijk afronden
-output_decimals = 1
-#We willen 24 uur in de toekomst de temperatuur voorspellen
-future_hours = 24
-#Hiervoor gebruiken we n_steps aantal uur
-n_steps = 168
-#Om te voorspellen gebruiken we de waarden uit numeric_columns, we moeten de length hebben van de array zodat het model weet hoeveel inputs het kan verwachten
-n_inputs = len(numeric_columns)
 
 def combine_data():
+    """
+    Deze functie combineert de tekstbestanden die gedownload zijn van het KNMI
+    We gaan uit van ruwe data, dus de bestanden moeten geen headers voor kolommen hebben.
+    Deze kolommen maken we namelijk zelf in de functie create_pandas_frame
+    """
     folder_path = "./data/uurmetingen"
     output = "./data/hourly_data.txt"
 
-    #Een list maken van alle bestanden in onze /data/uurmetingen folder
+    #Een list maken van alle bestanden in onze ./data/uurmetingen folder
     text_files = [file for file in os.listdir(folder_path)]
 
-    #Alle bestanden uit de text_files list combineren tot 1 tekstbestand in /data/hourly_data.txt
+    #Alle bestanden uit de text_files list combineren tot 1 tekstbestand in ./data/hourly_data.txt
     with open(output, "w") as outfile:
         for txt_file in text_files:
             file_path = os.path.join(folder_path, txt_file)
@@ -41,6 +53,10 @@ def combine_data():
                 outfile.write(infile.read())
 
 def create_pandas_frame() -> pd.DataFrame:
+    """
+    Deze functie laad het tekstbestand dat wordt gemaakt met combine_data in als pandas dataframe.
+    Dit dataframe gebruiken we vervolgens in de volgende paar functies in deze code om alles klaar te maken om het model te trainen.
+    """
     data = "./data/hourly_data.txt"
     extracted_data = []
     #Tekstbestand hourly_data.txt openen
@@ -57,22 +73,20 @@ def create_pandas_frame() -> pd.DataFrame:
             temperature = float(values[7]) / 10
             pressure = float(values[14]) / 10
             humidity = float(values[17])
-
             #Dictionary maken van alle gegevens die we willen opslaan van een regel
             data = {
-                'temperature': temperature,
+                "temperature": temperature,
                 "pressure": pressure,
-                'humidity': humidity,
+                "humidity": humidity,
                 "year": date.year,
                 #Hier berekenen we de cosinus en sinus van onze uur en maand
                 #Dit doen we aangezien deze waarden cyclisch zijn, dus door deze als golf aan het model te geven
                 #Zorgen we ervoor dat de cyclische aard van uur en maand opgepikt kunnen worden door het model
-                "hour_sin": np.sin(2 * np.pi * date.hour / 24),
-                "hour_cos": np.cos(2 * np.pi * date.hour / 24),
-                "month_sin": np.sin(2 * np.pi * date.month / 12),
-                "month_cos": np.cos(2 * np.pi * date.month / 12),
+                "hour_sin": np.sin(2 * np.pi * date.hour / 24).astype('float32'),
+                "hour_cos": np.cos(2 * np.pi * date.hour / 24).astype('float32'),
+                "month_sin": np.sin(2 * np.pi * date.month / 12).astype('float32'),
+                "month_cos": np.cos(2 * np.pi * date.month / 12).astype('float32'),
                 "date": date,
-                #"day": date.day,
             }
             #Gemaakte dictionary toevoegen aan onze eindlijst van dictionaries
             #extracted_data heeft uiteindelijk elke regel van hourly_data.txt als dictionary
@@ -114,7 +128,7 @@ def prepare_data_for_training(data: pd.DataFrame):
     validation_data_normalized = validation_data.copy()
     testing_data_normalized = testing_data.copy()
 
-    #Dictionary om alle scalers op te slaan
+    #Dictionary om alle scalers in op te slaan
     scalers = {}
 
     #Voor elke kolom in onze dataset, scalen we de waarden met een scaler tussen 0 en 1 voor het trainen van het model
@@ -132,13 +146,20 @@ def prepare_data_for_training(data: pd.DataFrame):
 
 
 def save_dataframe(data: pd.DataFrame, path: str):
+    """
+    Functie waarmee we het dataframe kunnen opslaan.
+    Zou gebruikt kunnen worden om niet elke keer de data te combineren bij het opstarten van het programma.
+    """
     data.to_csv(path, index=True)
 
 def create_sequences(data_input, n_steps, future_hours, out_feature_index):
     """
     Functie die sequences maakt van onze data
+    Een sequence is N_STEPS aantal uur, en de waarde die voorspelt wordt met N_STEPS is FUTURE_HOURS aantal uur in de toekomst
     """
+    #Dataframe met .values omzetten naar een pandas array, tensorflow werkt namelijk met pandas array's en niet dataframes.
     data_input = data_input.values
+    #X wordt gevuld met N_STEPS aantal uurmetingen, en Y wordt gevuld met de daadwerkelijk gemeten waarde over FUTURE_HOURS
     x, y = [], []
     for i in range(len(data_input) - n_steps - future_hours):
         end_ix = i + n_steps
@@ -152,15 +173,19 @@ def create_sequences(data_input, n_steps, future_hours, out_feature_index):
     return np.array(x), np.array(y)
 
 def test_model(model, x_testing, y_testing, scaler):
+    """
+    Een functie waarmee we onze validitatieset gebruiken om te kijken hoe ons model presteert.
+    Voorspelde waarden worden teruggeschaald naar celsius, om te kunnen zien hoeveel graden het model er gemiddeld naast zit.
+    """
     #Model gebruiken om temperatuur te voorspellen
     predictions = model.predict(x_testing)
     #Output terugrekenen van scaled versie naar celsius
     predictions_rescaled = scaler.inverse_transform(predictions.reshape(-1, 1))
-    predictions_rounded = np.round(predictions_rescaled, output_decimals)
+    predictions_rounded = np.round(predictions_rescaled, OUTPUT_DECIMALS)
 
     #Hetzelfde doen we voor onze testing_data om de output van het model te vergelijken
     y_testing_rescaled = scaler.inverse_transform(y_testing.reshape(-1, 1))
-    y_testing_rounded = np.round(y_testing_rescaled, output_decimals)
+    y_testing_rounded = np.round(y_testing_rescaled, OUTPUT_DECIMALS)
 
 
     #Verschil tussen prediction en daadwerkelijke waarde uitrekenen
@@ -178,15 +203,15 @@ def main():
 
     scalers, training, validation, testing = prepare_data_for_training(dataframe)
     print(scalers)
-    x_train, y_train = create_sequences(training, n_steps, future_hours, output_feature_index)
-    x_validation, y_validation = create_sequences(validation, n_steps, future_hours, output_feature_index)
-    x_testing, y_testing = create_sequences(testing, n_steps, future_hours, output_feature_index)
+    x_train, y_train = create_sequences(training, N_STEPS, FUTURE_HOURS, output_feature_index)
+    x_validation, y_validation = create_sequences(validation, N_STEPS, FUTURE_HOURS, output_feature_index)
+    x_testing, y_testing = create_sequences(testing, N_STEPS, FUTURE_HOURS, output_feature_index)
 
     #Hier maken we het model dat we gaan trainen
-    #We gebruiken als eerste laag 128 LSTM nodes, en aan het einde 1 dense node voor onze output_feature, temperatuur
+    #We gebruiken als eerste laag 128 LSTM nodes, en aan het einde 1 dense node voor onze output_feature temperatuur
     model = Sequential([
         LSTM(128,
-             input_shape=(n_steps, x_train.shape[2])),
+             input_shape=(N_STEPS, x_train.shape[2])),
         Dense(1)
     ])
 
@@ -206,8 +231,8 @@ def main():
     history = model.fit(
         x_train, y_train,
         validation_data=(x_validation, y_validation),
-        epochs=2,
-        batch_size=2048,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
         callbacks=[early_stop]
     )
 
@@ -216,7 +241,7 @@ def main():
     model.save("./model/weather_model.h5")
     dump(scalers, './model/scalers.pkl')
     
-    test_model(model, x_testing, y_testing, scalers['temperature'])
+    test_model(model, x_testing, y_testing, scalers[output_feature])
 
 if __name__ == '__main__': 
     main()

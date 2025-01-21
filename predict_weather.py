@@ -1,5 +1,6 @@
-from keras.models import load_model
+from keras.models import load_model, Sequential
 from keras.losses import MeanSquaredError
+from sklearn.preprocessing import MinMaxScaler
 from joblib import load
 import sqlite3 as sql
 import pandas as pd
@@ -11,7 +12,7 @@ numeric_columns = ['temperature', 'pressure', 'humidity', 'year', 'hour_sin', 'h
 #How many hours the model expects to predict the next value
 LIMIT_ROWS = 168
 
-weather_model = load_model('./model/weather_model.h5')
+weather_model: Sequential = load_model('./model/weather_model.h5')
 scalers = load('./model/scalers.pkl')
 
 conn = sql.connect('./db/sensor_readings')
