@@ -17,11 +17,13 @@ OUTPUT_DECIMALS = 1
 #We willen 24 uur in de toekomst de temperatuur voorspellen
 FUTURE_HOURS = 24
 #Hiervoor gebruiken we n_steps aantal uur
-N_STEPS = 168
+N_STEPS = 48
 #Aantal epochs voor model training
-EPOCHS = 50
+EPOCHS = 100
 #Batch size
 BATCH_SIZE = 2048
+#Amount of epochs model allows no increase in val_loss
+TRAINING_PATIENCE = 10
 
 #De kolommen uit ons dataframe die we gebruiken om het model te trainen
 #Het is belangrijk deze lijst op dezelfde volgorde te houden als de dictionary die gemaakt wordt in create_pandas_frame!
@@ -174,7 +176,7 @@ def create_sequences(data_input, n_steps, future_hours, out_feature_index):
 
 def test_model(model, x_testing, y_testing, scaler):
     """
-    Een functie waarmee we onze validitatieset gebruiken om te kijken hoe ons model presteert.
+    Een functie waarmee we onze testingset gebruiken om te kijken hoe ons model presteert.
     Voorspelde waarden worden teruggeschaald naar celsius, om te kunnen zien hoeveel graden het model er gemiddeld naast zit.
     """
     #Model gebruiken om temperatuur te voorspellen
@@ -221,7 +223,7 @@ def main():
     #Callback die we gebruiken wanneer het model te inaccuraat wordt, hiermee proberen we overfitting te voorkomen
     early_stop = EarlyStopping(
         monitor='val_loss',
-        patience=6,
+        patience=TRAINING_PATIENCE,
         mode='min',
         restore_best_weights=True
     )
